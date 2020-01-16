@@ -15,7 +15,7 @@ namespace mls {
 
 enum class ProtocolVersion : uint8_t
 {
-  mls10 = 0xFF,
+  mls10 = 0x00,
 };
 
 // struct {
