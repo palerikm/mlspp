@@ -28,6 +28,26 @@ State::State(bytes group_id,
   _keys = KeyScheduleEpoch::first(_suite, group_ctx);
 }
 
+State::State(SignaturePrivateKey sig_priv, const GroupKeyPackage& gkp)
+  : _suite(gkp.cipher_suite)
+  , _group_id(gkp.group_id)
+  , _epoch(gkp.epoch)
+  , _tree(gkp.tree)
+  , _confirmed_transcript_hash(gkp.confirmed_transcript_hash)
+  , _interim_transcript_hash(gkp.interim_transcript_hash)
+  , _extensions(gkp.extensions)
+  , _keys(gkp.cipher_suite)
+  , _index(0)
+  , _identity_priv(std::move(sig_priv))
+{
+  // The following are not set:
+  //    _index
+  //    _tree_priv
+  //
+  // This ctor should only be used within external_commit, in which case these
+  // fields are populated by the subsequent commit()
+}
+
 // Initialize a group from a Welcome
 State::State(const HPKEPrivateKey& init_priv,
              SignaturePrivateKey sig_priv,
@@ -96,6 +116,21 @@ State::State(const HPKEPrivateKey& init_priv,
   if (!verify_confirmation(group_info.confirmation)) {
     throw ProtocolError("Confirmation failed to verify");
   }
+}
+
+// Join a group from outside
+std::tuple<MLSPlaintext, State>
+State::external_join(const bytes& leaf_secret,
+                     SignaturePrivateKey sig_priv,
+                     const KeyPackage& kp,
+                     const GroupKeyPackage& gkp)
+{
+  auto initial_state = State(sig_priv, gkp);
+  auto add = initial_state.add_proposal(kp);
+  auto [commit_pt, welcome, state] =
+    initial_state.commit(leaf_secret, { add }, kp, gkp.external_init_key);
+  silence_unused(welcome);
+  return { commit_pt, state };
 }
 
 ///
@@ -186,6 +221,15 @@ std::tuple<MLSPlaintext, Welcome, State>
 State::commit(const bytes& leaf_secret,
               const std::vector<Proposal>& extra_proposals) const
 {
+  return commit(leaf_secret, extra_proposals, std::nullopt, std::nullopt);
+}
+
+std::tuple<MLSPlaintext, Welcome, State>
+State::commit(const bytes& leaf_secret,
+              const std::vector<Proposal>& extra_proposals,
+              const std::optional<KeyPackage>& joiner_key_package,
+              const std::optional<HPKEPublicKey>& external_init_key) const
+{
   // Construct a commit from cached proposals
   // TODO(rlb) ignore some proposals:
   // * Update after Update
@@ -212,13 +256,39 @@ State::commit(const bytes& leaf_secret,
     commit.proposals.push_back({ proposal });
   }
 
+  // If this is an external commit, insert an ExternalInit proposal
+  auto force_init_secret = std::optional<bytes>{};
+  if (external_init_key.has_value()) {
+    auto [enc, exported] = _keys.external_init(external_init_key.value());
+    force_init_secret = exported;
+    commit.proposals.push_back({ Proposal{ ExternalInit{ enc } } });
+  }
+
   // Apply proposals
   State next = successor();
   auto proposals = must_resolve(commit.proposals, _index);
   auto [has_updates, has_removes, joiner_locations] = next.apply(proposals);
 
+  // If this is an external commit, see where the new joiner ended up
+  // XXX(RLB) This has a bug where if the joiner's KP already exists elsewhere
+  // in the tree, the wrong index can be returned.  We should track which Add
+  // belongs to the new joiner, and set _index to the corresponding entry in
+  // joiner_locations.
+  auto sender = Sender{ SenderType::member, _index.val };
+  if (joiner_key_package.has_value()) {
+    // Find in the tree
+    auto index = next._tree.find(joiner_key_package.value());
+    if (!index.has_value()) {
+      throw InvalidParameterError("Joiner not added");
+    }
+
+    next._index = index.value();
+    sender = Sender{ SenderType::external_joiner, next._index.val };
+  }
+
   // KEM new entropy to the group and the new joiners
-  auto path_required = has_updates || has_removes || commit.proposals.empty();
+  auto path_required = has_updates || has_removes || commit.proposals.empty() ||
+                       external_init_key.has_value();
   auto update_secret = bytes(_suite.get().hpke.kdf.hash_size(), 0);
   auto path_secrets =
     std::vector<std::optional<bytes>>(joiner_locations.size());
@@ -247,7 +317,8 @@ State::commit(const bytes& leaf_secret,
   }
 
   // Create the Commit message and advance the transcripts / key schedule
-  auto pt = next.ratchet_and_sign(commit, update_secret, group_context());
+  auto pt = next.ratchet_and_sign(
+    sender, commit, update_secret, force_init_secret, group_context());
 
   // Complete the GroupInfo and form the Welcome
   auto group_info = GroupInfo{
@@ -269,6 +340,21 @@ State::commit(const bytes& leaf_secret,
   return std::make_tuple(pt, welcome, next);
 }
 
+GroupKeyPackage
+State::group_key_package() const
+{
+  return {
+    _suite,
+    _group_id,
+    _epoch,
+    _tree,
+    _confirmed_transcript_hash,
+    _interim_transcript_hash,
+    _keys.external_init_priv.public_key,
+    _extensions,
+  };
+}
+
 ///
 /// Message handlers
 ///
@@ -283,17 +369,18 @@ State::group_context() const
 }
 
 MLSPlaintext
-State::ratchet_and_sign(const Commit& op,
+State::ratchet_and_sign(const Sender& sender,
+                        const Commit& op,
                         const bytes& update_secret,
+                        const std::optional<bytes>& force_init_secret,
                         const GroupContext& prev_ctx)
 {
-  auto sender = Sender{ SenderType::member, _index.val };
   auto pt = MLSPlaintext{ _group_id, _epoch, sender, op };
 
   auto confirmed_transcript = _interim_transcript_hash + pt.commit_content();
   _confirmed_transcript_hash = _suite.get().digest.hash(confirmed_transcript);
   _epoch += 1;
-  update_epoch_secrets(update_secret);
+  update_epoch_secrets(update_secret, force_init_secret);
 
   auto& commit_data = std::get<CommitData>(pt.content);
   commit_data.confirmation = _suite.get().digest.hmac(
@@ -332,8 +419,13 @@ State::handle(const MLSPlaintext& pt)
     throw InvalidParameterError("Incorrect content type");
   }
 
-  if (pt.sender.sender_type != SenderType::member) {
-    throw ProtocolError("Commit must originate from within the group");
+  switch (pt.sender.sender_type) {
+    case SenderType::member:
+    case SenderType::external_joiner:
+      break;
+
+    default:
+      throw ProtocolError("Commit be either member or external_joiner");
   }
 
   auto sender = LeafIndex(pt.sender.sender);
@@ -348,6 +440,23 @@ State::handle(const MLSPlaintext& pt)
 
   auto next = successor();
   next.apply(proposals);
+
+  // If this is an external Commit, then it must have an ExternalInit proposal
+  // TODO(RLB) Simplify this out, so that we're not doing all the resolution
+  // here.
+  auto force_init_secret = std::optional<bytes>{};
+  if (pt.sender.sender_type == SenderType::external_joiner) {
+    auto pos =
+      std::find_if(proposals.begin(), proposals.end(), [&](auto&& cached) {
+        return std::holds_alternative<ExternalInit>(cached.proposal.content);
+      });
+    if (pos == proposals.end()) {
+      throw ProtocolError("External commit with ExternalInit");
+    }
+
+    const auto& enc = std::get<ExternalInit>(pos->proposal.content).kem_output;
+    force_init_secret = _keys.receive_external_init(enc);
+  }
 
   // Decapsulate and apply the UpdatePath, if provided
   // TODO(RLB) Verify that path is provided if required
@@ -373,7 +482,7 @@ State::handle(const MLSPlaintext& pt)
     next._confirmed_transcript_hash + pt.commit_auth_data());
 
   next._epoch += 1;
-  next.update_epoch_secrets(update_secret);
+  next.update_epoch_secrets(update_secret, force_init_secret);
 
   // Verify the confirmation MAC
   if (!next.verify_confirmation(commit_data.confirmation)) {
@@ -574,7 +683,8 @@ operator!=(const State& lhs, const State& rhs)
 }
 
 void
-State::update_epoch_secrets(const bytes& update_secret)
+State::update_epoch_secrets(const bytes& update_secret,
+                            const std::optional<bytes>& force_init_secret)
 {
   auto ctx = tls::marshal(GroupContext{
     _group_id,
@@ -583,8 +693,8 @@ State::update_epoch_secrets(const bytes& update_secret)
     _confirmed_transcript_hash,
     _extensions,
   });
-  _keys =
-    _keys.next(LeafCount{ _tree.size() }, update_secret, std::nullopt, ctx);
+  _keys = _keys.next(
+    LeafCount{ _tree.size() }, update_secret, force_init_secret, ctx);
 }
 
 ///
@@ -647,11 +757,33 @@ State::verify_internal(const MLSPlaintext& pt) const
 }
 
 bool
+State::verify_external_commit(const MLSPlaintext& pt) const
+{
+  // Content type MUST be commit
+  if (!std::holds_alternative<CommitData>(pt.content)) {
+    throw ProtocolError("External Commit does not hold a commit");
+  }
+
+  const auto& commit = std::get<CommitData>(pt.content).commit;
+  if (!commit.path.has_value()) {
+    throw ProtocolError("External Commit does not have a path");
+  }
+
+  // Verify with public key from update path leaf key package
+  const auto& kp = commit.path.value().leaf_key_package;
+  const auto& pub = kp.credential.public_key();
+  return pt.verify(_suite, group_context(), pub);
+}
+
+bool
 State::verify(const MLSPlaintext& pt) const
 {
   switch (pt.sender.sender_type) {
     case SenderType::member:
       return verify_internal(pt);
+
+    case SenderType::external_joiner:
+      return verify_external_commit(pt);
 
     default:
       // TODO(RLB) Support other sender types

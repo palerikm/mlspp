@@ -96,6 +96,24 @@ TEST_CASE_FIXTURE(StateTest, "Two Person")
   verify_group_functionality(group);
 }
 
+TEST_CASE_FIXTURE(StateTest, "External Join")
+{
+  // Initialize the creator's state
+  auto first0 =
+    State{ group_id, suite, init_privs[0], identity_privs[0], key_packages[0] };
+  auto group_key_package = first0.group_key_package();
+
+  // Initialize the second participant as an external joiner
+  auto [commit, second0] = State::external_join(
+    fresh_secret(), identity_privs[1], key_packages[1], group_key_package);
+
+  // Creator processes the commit
+  auto first1 = first0.handle(commit).value();
+
+  auto group = std::vector<State>{ first1, second0 };
+  verify_group_functionality(group);
+}
+
 TEST_CASE_FIXTURE(StateTest, "Add Multiple Members")
 {
   // Initialize the creator's state

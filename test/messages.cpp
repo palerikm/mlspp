@@ -84,14 +84,8 @@ TEST_CASE("Messages Interop")
 
     // GroupKeyPackage
     auto group_key_package = GroupKeyPackage{
-      tc.cipher_suite,
-      tv.group_id,
-      tv.epoch,
-      tree,
-      tv.random,
-      tv.random,
-      dh_key,
-      ext_list,
+      tc.cipher_suite, tv.group_id, tv.epoch, tree,
+      tv.random,       tv.random,   dh_key,   ext_list,
     };
     tls_round_trip(tc.group_key_package, group_key_package, true);
 
