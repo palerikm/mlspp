@@ -23,6 +23,14 @@ tidy:
 
 test: ${BUILD_DIR} test/*
 	cmake --build ${BUILD_DIR} --target mlspp_test
+
+dtest: test
+	cd ${TEST_VECTOR_DIR} && ./mlspp_test
+
+dbtest: test
+	cd ${TEST_VECTOR_DIR} && lldb ./mlspp_test
+
+ctest: test
 	cd ${TEST_VECTOR_DIR} && ctest
 
 libs: ${BUILD_DIR}
