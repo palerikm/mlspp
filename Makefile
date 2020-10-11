@@ -44,7 +44,7 @@ test-libs: ${BUILD_DIR}
 	cmake --build ${BUILD_DIR} --target tls_syntax_test
 	cd build/lib/tls_syntax/test/ && ctest
 
-test-all: test-libs test
+test-all: test-libs ctest
 
 gen: ${BUILD_DIR}
 	cmake --build ${BUILD_DIR} --target test_gen

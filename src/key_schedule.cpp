@@ -295,10 +295,10 @@ KeyScheduleEpoch::first(CipherSuite suite, const bytes& context)
 
 KeyScheduleEpoch::KeyScheduleEpoch(CipherSuite suite_in,
                                    LeafCount size_in,
-                                   const bytes& epoch_secret_in,
+                                   bytes epoch_secret_in,
                                    const bytes& context)
   : suite(suite_in)
-  , epoch_secret(epoch_secret_in)
+  , epoch_secret(std::move(epoch_secret_in))
 {
   sender_data_secret =
     suite.derive_secret(epoch_secret, "sender data", context);

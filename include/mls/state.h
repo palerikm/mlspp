@@ -81,7 +81,7 @@ public:
   Proposal add_proposal(const KeyPackage& key_package) const;
   Proposal update_proposal(const bytes& leaf_secret);
   Proposal remove_proposal(RosterIndex index) const;
-  Proposal remove_proposal(LeafIndex removed) const;
+  static Proposal remove_proposal(LeafIndex removed);
 
   MLSPlaintext add(const KeyPackage& key_package) const;
   MLSPlaintext update(const bytes& leaf_secret);
@@ -181,7 +181,7 @@ protected:
   void apply(LeafIndex target, const Update& update);
   void apply(LeafIndex target, const Update& update, const bytes& leaf_secret);
   void apply(const Remove& remove);
-  std::vector<LeafIndex> apply(const std::vector<CachedProposal>& pts,
+  std::vector<LeafIndex> apply(const std::vector<CachedProposal>& proposals,
                                ProposalType::selector required_type);
   std::tuple<bool, bool, std::vector<LeafIndex>> apply(
     const std::vector<CachedProposal>& proposals);
@@ -199,7 +199,7 @@ protected:
 
   // Derive and set the secrets for an epoch, given some new entropy
   void update_epoch_secrets(const bytes& update_secret,
-                            const std::optional<bytes>& external_init_data);
+                            const std::optional<bytes>& force_init_secret);
 
   // Signature verification over a handshake message
   bool verify_internal(const MLSPlaintext& pt) const;

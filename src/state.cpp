@@ -125,7 +125,7 @@ State::external_join(const bytes& leaf_secret,
                      const KeyPackage& kp,
                      const GroupKeyPackage& gkp)
 {
-  auto initial_state = State(sig_priv, gkp);
+  auto initial_state = State(std::move(sig_priv), gkp);
   auto add = initial_state.add_proposal(kp);
   auto [commit_pt, welcome, state] =
     initial_state.commit(leaf_secret, { add }, kp, gkp.external_init_key);
@@ -188,7 +188,7 @@ State::remove_proposal(RosterIndex index) const
 }
 
 Proposal
-State::remove_proposal(LeafIndex removed) const
+State::remove_proposal(LeafIndex removed)
 {
   return { Remove{ removed } };
 }
@@ -578,7 +578,7 @@ State::apply(const std::vector<CachedProposal>& proposals,
       }
 
       case ProposalType::selector::update: {
-        auto& update = std::get<Update>(cached.proposal.content);
+        const auto& update = std::get<Update>(cached.proposal.content);
         if (cached.sender != _index) {
           apply(cached.sender, update);
           break;

@@ -180,7 +180,7 @@ HPKEPublicKey::encrypt(CipherSuite suite,
 
 std::tuple<bytes, bytes>
 HPKEPublicKey::do_export(CipherSuite suite,
-                         const std::string label,
+                         const std::string& label,
                          size_t size) const
 {
   auto label_data = bytes(label.begin(), label.end());
@@ -238,7 +238,7 @@ HPKEPrivateKey::decrypt(CipherSuite suite,
 bytes
 HPKEPrivateKey::do_export(CipherSuite suite,
                           const bytes& kem_output,
-                          const std::string label,
+                          const std::string& label,
                           size_t size) const
 {
   auto label_data = bytes(label.begin(), label.end());

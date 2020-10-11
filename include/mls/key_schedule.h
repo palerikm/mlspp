@@ -96,7 +96,7 @@ struct KeyScheduleEpoch
   KeyScheduleEpoch(CipherSuite suite_in);
   KeyScheduleEpoch(CipherSuite suite,
                    LeafCount size,
-                   const bytes& epoch_secret,
+                   bytes epoch_secret,
                    const bytes& context);
 
   static KeyScheduleEpoch first(CipherSuite suite, const bytes& context);
