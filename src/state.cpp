@@ -270,20 +270,22 @@ State::commit(const bytes& leaf_secret,
   auto [has_updates, has_removes, joiner_locations] = next.apply(proposals);
 
   // If this is an external commit, see where the new joiner ended up
-  // XXX(RLB) This has a bug where if the joiner's KP already exists elsewhere
-  // in the tree, the wrong index can be returned.  We should track which Add
-  // belongs to the new joiner, and set _index to the corresponding entry in
-  // joiner_locations.
   auto sender = Sender{ SenderType::member, _index.val };
   if (joiner_key_package.has_value()) {
-    // Find in the tree
-    auto index = next._tree.find(joiner_key_package.value());
-    if (!index.has_value()) {
+    // XXX(RLB) It should be possible to do this with std::find_if
+    size_t i = 0;
+    for (; i < joiners.size(); i++) {
+      if (joiners[i] == joiner_key_package.value()) {
+        break;
+      }
+    }
+
+    if (i == joiners.size()) {
       throw InvalidParameterError("Joiner not added");
     }
 
-    next._index = index.value();
-    sender = Sender{ SenderType::external_joiner, next._index.val };
+    next._index = joiner_locations[i];
+    sender = Sender{ SenderType::external_joiner, joiner_locations[i].val };
   }
 
   // KEM new entropy to the group and the new joiners
