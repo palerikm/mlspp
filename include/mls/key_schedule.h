@@ -90,17 +90,24 @@ struct KeyScheduleEpoch
   bytes confirmation_key;
   bytes init_secret;
 
-  KeyScheduleEpoch() = default;
+  HPKEPrivateKey external_init_priv;
 
-  static KeyScheduleEpoch first(CipherSuite suite,
-                                const bytes& init_secret,
-                                const bytes& context);
-  static KeyScheduleEpoch create(CipherSuite suite,
-                                 LeafCount size,
-                                 const bytes& epoch_secret,
-                                 const bytes& context);
+  KeyScheduleEpoch() = delete;
+  KeyScheduleEpoch(CipherSuite suite_in);
+  KeyScheduleEpoch(CipherSuite suite,
+                   LeafCount size,
+                   const bytes& epoch_secret,
+                   const bytes& context);
+
+  static KeyScheduleEpoch first(CipherSuite suite, const bytes& context);
+
+  std::tuple<bytes, bytes> external_init(
+    const HPKEPublicKey& external_init_key) const;
+  bytes receive_external_init(const bytes& kem_output) const;
+
   KeyScheduleEpoch next(LeafCount size,
                         const bytes& update_secret,
+                        const std::optional<bytes>& force_init_secret,
                         const bytes& context) const;
 };
 

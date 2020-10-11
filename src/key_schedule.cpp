@@ -279,51 +279,81 @@ GroupKeySource::erase(LeafIndex sender, uint32_t generation)
 /// KeyScheduleEpoch
 ///
 
+KeyScheduleEpoch::KeyScheduleEpoch(CipherSuite suite_in)
+  : suite(suite_in)
+{}
+
 KeyScheduleEpoch
-KeyScheduleEpoch::create(CipherSuite suite,
-                         LeafCount size,
-                         const bytes& epoch_secret,
-                         const bytes& context)
+KeyScheduleEpoch::first(CipherSuite suite, const bytes& context)
 {
-  auto sender_data_secret =
+  auto secret_size = suite.get().digest.hash_size();
+  auto init_secret = bytes(secret_size, 0);
+  auto update_secret = bytes(secret_size, 0);
+  auto epoch_secret = suite.get().hpke.kdf.extract(init_secret, update_secret);
+  return KeyScheduleEpoch(suite, LeafCount{ 1 }, epoch_secret, context);
+}
+
+KeyScheduleEpoch::KeyScheduleEpoch(CipherSuite suite_in,
+                                   LeafCount size_in,
+                                   const bytes& epoch_secret_in,
+                                   const bytes& context)
+  : suite(suite_in)
+  , epoch_secret(epoch_secret_in)
+{
+  sender_data_secret =
     suite.derive_secret(epoch_secret, "sender data", context);
-  auto handshake_secret =
-    suite.derive_secret(epoch_secret, "handshake", context);
-  auto application_secret = suite.derive_secret(epoch_secret, "app", context);
-  auto exporter_secret = suite.derive_secret(epoch_secret, "exporter", context);
-  auto confirmation_key = suite.derive_secret(epoch_secret, "confirm", context);
-  auto init_secret = suite.derive_secret(epoch_secret, "init", context);
+  handshake_secret = suite.derive_secret(epoch_secret, "handshake", context);
+  application_secret = suite.derive_secret(epoch_secret, "app", context);
+  exporter_secret = suite.derive_secret(epoch_secret, "exporter", context);
+  confirmation_key = suite.derive_secret(epoch_secret, "confirm", context);
+  init_secret = suite.derive_secret(epoch_secret, "init", context);
 
   auto key_size = suite.get().hpke.aead.key_size();
-  auto sender_data_key =
+  sender_data_key =
     suite.expand_with_label(sender_data_secret, "sd key", {}, key_size);
 
   auto handshake_base =
     std::make_unique<NoFSBaseKeySource>(suite, handshake_secret);
-  auto application_base =
-    std::make_unique<TreeBaseKeySource>(suite, size, application_secret);
+  handshake_keys = GroupKeySource{ handshake_base.release() };
 
-  return KeyScheduleEpoch{ suite,
-                           epoch_secret,
-                           sender_data_secret,
-                           sender_data_key,
-                           handshake_secret,
-                           GroupKeySource{ handshake_base.release() },
-                           application_secret,
-                           GroupKeySource{ application_base.release() },
-                           exporter_secret,
-                           confirmation_key,
-                           init_secret };
+  auto application_base =
+    std::make_unique<TreeBaseKeySource>(suite, size_in, application_secret);
+  application_keys = GroupKeySource{ application_base.release() };
+
+  auto external_init_secret =
+    suite.derive_secret(epoch_secret, "external init", context);
+  external_init_priv = HPKEPrivateKey::derive(suite, external_init_secret);
+}
+
+std::tuple<bytes, bytes>
+KeyScheduleEpoch::external_init(const HPKEPublicKey& external_init_key) const
+{
+  auto size = suite.get().digest.hash_size();
+  return external_init_key.do_export(suite, "MLS 1.0 external init", size);
+}
+
+bytes
+KeyScheduleEpoch::receive_external_init(const bytes& kem_output) const
+{
+  auto size = suite.get().digest.hash_size();
+  return external_init_priv.do_export(
+    suite, kem_output, "MLS 1.0 external init", size);
 }
 
 KeyScheduleEpoch
 KeyScheduleEpoch::next(LeafCount size,
                        const bytes& update_secret,
+                       const std::optional<bytes>& force_init_secret,
                        const bytes& context) const
 {
+  auto curr_init_secret = init_secret;
+  if (force_init_secret.has_value()) {
+    curr_init_secret = force_init_secret.value();
+  }
+
   auto new_epoch_secret =
-    suite.get().hpke.kdf.extract(init_secret, update_secret);
-  return KeyScheduleEpoch::create(suite, size, new_epoch_secret, context);
+    suite.get().hpke.kdf.extract(curr_init_secret, update_secret);
+  return KeyScheduleEpoch(suite, size, new_epoch_secret, context);
 }
 
 bool
@@ -340,10 +370,11 @@ operator==(const KeyScheduleEpoch& lhs, const KeyScheduleEpoch& rhs)
   auto exporter_secret = (lhs.exporter_secret == rhs.exporter_secret);
   auto confirmation_key = (lhs.confirmation_key == rhs.confirmation_key);
   auto init_secret = (lhs.init_secret == rhs.init_secret);
+  auto external_init_priv = (lhs.external_init_priv == rhs.external_init_priv);
 
   return suite && epoch_secret && sender_data_secret && sender_data_key &&
          handshake_secret && application_secret && exporter_secret &&
-         confirmation_key && init_secret;
+         confirmation_key && init_secret && external_init_priv;
 }
 
 } // namespace mls

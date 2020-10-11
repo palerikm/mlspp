@@ -8,6 +8,13 @@
 
 using namespace mls;
 
+struct Bytes1
+{
+  bytes data;
+  TLS_SERIALIZABLE(data)
+  TLS_TRAITS(tls::vector<1>)
+};
+
 /////
 
 struct TreeMathTestVectors
@@ -161,6 +168,7 @@ struct KeyScheduleTestVectors
   {
     LeafCount n_members;
     bytes update_secret;
+    std::optional<Bytes1> external_init_data;
 
     bytes epoch_secret;
 
@@ -179,6 +187,7 @@ struct KeyScheduleTestVectors
 
     TLS_SERIALIZABLE(n_members,
                      update_secret,
+                     external_init_data,
                      epoch_secret,
                      sender_data_secret,
                      sender_data_key,
@@ -191,6 +200,7 @@ struct KeyScheduleTestVectors
                      init_secret);
     TLS_TRAITS(tls::pass,
                tls::vector<1>,
+               tls::pass,
                tls::vector<1>,
                tls::vector<1>,
                tls::vector<1>,
@@ -269,13 +279,6 @@ struct TestTreeKEMPublicKey : public TreeKEMPublicKey
 struct TreeKEMTestVectors
 {
   static const std::string file_name;
-
-  struct Bytes1
-  {
-    bytes data;
-    TLS_SERIALIZABLE(data)
-    TLS_TRAITS(tls::vector<1>)
-  };
 
   struct TestCase
   {

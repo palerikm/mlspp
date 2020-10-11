@@ -33,14 +33,18 @@ TEST_CASE("Key Schedule Interop")
     bytes init_secret(secret_size, 0);
 
     auto group_context = tls::get<GroupContext>(tv.base_group_context);
-
-    KeyScheduleEpoch my_epoch;
-    my_epoch.suite = suite;
-    my_epoch.init_secret = tv.base_init_secret;
+    auto my_epoch = KeyScheduleEpoch::first(suite, tv.base_group_context);
 
     for (const auto& epoch : tc.epochs) {
+      auto force_init_secret = std::optional<bytes>{};
+      if (epoch.external_init_data) {
+        auto kem_output = epoch.external_init_data.value().data;
+        force_init_secret = my_epoch.receive_external_init(kem_output);
+      }
+
       auto ctx = tls::marshal(group_context);
-      my_epoch = my_epoch.next(epoch.n_members, epoch.update_secret, ctx);
+      my_epoch = my_epoch.next(
+        epoch.n_members, epoch.update_secret, force_init_secret, ctx);
 
       // Check the secrets
       REQUIRE(my_epoch.epoch_secret == epoch.epoch_secret);

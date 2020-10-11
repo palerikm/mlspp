@@ -158,13 +158,22 @@ generate_key_schedule()
     uint32_t max_members = 20;
     auto n_members = min_members;
 
-    KeyScheduleEpoch epoch;
-    epoch.suite = suite;
-    epoch.init_secret = tv.base_init_secret;
+    auto ctx = tls::marshal(group_context);
+    auto epoch = KeyScheduleEpoch::first(suite, ctx);
 
     for (size_t j = 0; j < tv.n_epochs; ++j) {
+      auto external_init_bytes1 = std::optional<Bytes1>{};
+      auto force_init_secret = std::optional<bytes>{};
+      if (j % 2 == 1) {
+        const auto& pub = epoch.external_init_priv.public_key;
+        auto [enc, exp] = epoch.external_init(pub);
+        external_init_bytes1 = Bytes1{ enc };
+        force_init_secret = exp;
+      }
+
       auto ctx = tls::marshal(group_context);
-      epoch = epoch.next(LeafCount{ n_members }, update_secret, ctx);
+      epoch = epoch.next(
+        LeafCount{ n_members }, update_secret, force_init_secret, ctx);
 
       auto handshake_keys = std::vector<KeyScheduleTestVectors::KeyAndNonce>();
       auto application_keys =
@@ -180,6 +189,7 @@ generate_key_schedule()
       tc.epochs.push_back({
         LeafCount{ n_members },
         update_secret,
+        external_init_bytes1,
         epoch.epoch_secret,
         epoch.sender_data_secret,
         epoch.sender_data_key,
@@ -436,7 +446,6 @@ main() // NOLINT(bugprone-exception-escape)
   // possible)
   verify_reproducible(generate_tree_math);
   verify_reproducible(generate_hash_ratchet);
-  verify_reproducible(generate_key_schedule);
 
   // Verify that the test vectors load
   try {

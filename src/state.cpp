@@ -15,6 +15,7 @@ State::State(bytes group_id,
   , _group_id(std::move(group_id))
   , _epoch(0)
   , _tree(suite)
+  , _keys(suite)
   , _index(0)
   , _identity_priv(std::move(sig_priv))
 {
@@ -24,9 +25,7 @@ State::State(bytes group_id,
 
   // TODO(RLB): Align this to the latest spec
   auto group_ctx = tls::marshal(group_context());
-  auto epoch_secret = bytes(suite.get().digest.hash_size(), 0);
-  _keys =
-    KeyScheduleEpoch::create(_suite, LeafCount(1), epoch_secret, group_ctx);
+  _keys = KeyScheduleEpoch::first(_suite, group_ctx);
 }
 
 // Initialize a group from a Welcome
@@ -36,6 +35,7 @@ State::State(const HPKEPrivateKey& init_priv,
              const Welcome& welcome)
   : _suite(welcome.cipher_suite)
   , _tree(welcome.cipher_suite)
+  , _keys(welcome.cipher_suite)
   , _identity_priv(std::move(sig_priv))
 {
   auto maybe_kpi = welcome.find(kp);
@@ -89,7 +89,7 @@ State::State(const HPKEPrivateKey& init_priv,
 
   // Ratchet forward into the current epoch
   auto group_ctx = tls::marshal(group_context());
-  _keys = KeyScheduleEpoch::create(
+  _keys = KeyScheduleEpoch(
     _suite, LeafCount(_tree.size()), secrets.epoch_secret, group_ctx);
 
   // Verify the confirmation
@@ -583,7 +583,8 @@ State::update_epoch_secrets(const bytes& update_secret)
     _confirmed_transcript_hash,
     _extensions,
   });
-  _keys = _keys.next(LeafCount{ _tree.size() }, update_secret, ctx);
+  _keys =
+    _keys.next(LeafCount{ _tree.size() }, update_secret, std::nullopt, ctx);
 }
 
 ///
