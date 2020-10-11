@@ -160,6 +160,10 @@ template<>
 const ProposalType::selector ProposalType::type<Remove> =
   ProposalType::selector::remove;
 
+template<>
+const ProposalType::selector ProposalType::type<ExternalInit> =
+  ProposalType::selector::external_init;
+
 ProposalType::selector
 Proposal::proposal_type() const
 {

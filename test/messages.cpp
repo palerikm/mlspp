@@ -82,6 +82,19 @@ TEST_CASE("Messages Interop")
     key_package.signature = tv.random;
     tls_round_trip(tc.key_package, key_package, reproducible);
 
+    // GroupKeyPackage
+    auto group_key_package = GroupKeyPackage{
+      tc.cipher_suite,
+      tv.group_id,
+      tv.epoch,
+      tree,
+      tv.random,
+      tv.random,
+      dh_key,
+      ext_list,
+    };
+    tls_round_trip(tc.group_key_package, group_key_package, true);
+
     // UpdatePath
     auto update_path =
       UpdatePath{ key_package,
@@ -136,6 +149,15 @@ TEST_CASE("Messages Interop")
       MLSPlaintext{ tv.group_id, tv.epoch, tv.sender, remove_prop };
     remove_hs.signature = tv.random;
     tls_round_trip(tc.remove_proposal, remove_hs, true);
+
+    auto external_init_prop = Proposal{ ExternalInit{ tv.random } };
+    CHECK(external_init_prop.proposal_type() ==
+          ProposalType::selector::external_init);
+
+    auto external_init_hs =
+      MLSPlaintext{ tv.group_id, tv.epoch, tv.sender, external_init_prop };
+    external_init_hs.signature = tv.random;
+    tls_round_trip(tc.external_init_proposal, external_init_hs, true);
 
     // Commit
     auto commit = Commit{

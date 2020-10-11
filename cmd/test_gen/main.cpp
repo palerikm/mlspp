@@ -314,6 +314,18 @@ generate_messages()
     key_package.extensions = ext_list;
     key_package.signature = tv.random;
 
+    // Construct GroupKeyPackage
+    auto group_key_package = GroupKeyPackage{
+      suite,
+      tv.group_id,
+      tv.epoch,
+      tree,
+      tv.random,
+      tv.random,
+      dh_key,
+      ext_list,
+    };
+
     // Construct UpdatePath
     auto update_path =
       UpdatePath{ key_package,
@@ -354,6 +366,11 @@ generate_messages()
       MLSPlaintext{ tv.group_id, tv.epoch, tv.sender, remove_prop };
     remove_hs.signature = tv.random;
 
+    auto external_init_prop = Proposal{ ExternalInit{ tv.random } };
+    auto external_init_hs =
+      MLSPlaintext{ tv.group_id, tv.epoch, tv.sender, external_init_prop };
+    external_init_hs.signature = tv.random;
+
     // Construct Commit
     auto commit = Commit{
       { { ProposalRef{ tv.random } }, { ProposalRef{ tv.random } } },
@@ -369,6 +386,7 @@ generate_messages()
 
     tv.cases.push_back({ suite,
                          tls::marshal(key_package),
+                         tls::marshal(group_key_package),
                          tls::marshal(update_path),
                          tls::marshal(group_info),
                          tls::marshal(group_secrets),
@@ -377,6 +395,7 @@ generate_messages()
                          tls::marshal(add_hs),
                          tls::marshal(update_hs),
                          tls::marshal(remove_hs),
+                         tls::marshal(external_init_hs),
                          tls::marshal(commit),
                          tls::marshal(ciphertext) });
   }

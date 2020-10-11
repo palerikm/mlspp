@@ -311,6 +311,7 @@ struct MessagesTestVectors
     CipherSuite cipher_suite;
 
     bytes key_package;
+    bytes group_key_package;
     bytes update_path;
     bytes group_info;
     bytes group_secrets;
@@ -319,11 +320,13 @@ struct MessagesTestVectors
     bytes add_proposal;
     bytes update_proposal;
     bytes remove_proposal;
+    bytes external_init_proposal;
     bytes commit;
     bytes ciphertext;
 
     TLS_SERIALIZABLE(cipher_suite,
                      key_package,
+                     group_key_package,
                      update_path,
                      group_info,
                      group_secrets,
@@ -332,9 +335,12 @@ struct MessagesTestVectors
                      add_proposal,
                      update_proposal,
                      remove_proposal,
+                     external_init_proposal,
                      commit,
                      ciphertext);
     TLS_TRAITS(tls::pass,
+               tls::vector<4>,
+               tls::vector<4>,
                tls::vector<4>,
                tls::vector<4>,
                tls::vector<4>,

@@ -11,6 +11,39 @@
 
 namespace mls {
 
+///
+/// GroupKeyPackage
+///
+
+struct GroupKeyPackage
+{
+  CipherSuite cipher_suite;
+  bytes group_id;
+  epoch_t epoch;
+  TreeKEMPublicKey tree;
+  bytes confirmed_transcript_hash;
+  bytes interim_transcript_hash;
+  HPKEPublicKey external_init_key;
+  ExtensionList extensions;
+
+  TLS_SERIALIZABLE(cipher_suite,
+                   group_id,
+                   epoch,
+                   tree,
+                   confirmed_transcript_hash,
+                   interim_transcript_hash,
+                   external_init_key,
+                   extensions)
+  TLS_TRAITS(tls::pass,
+             tls::vector<1>,
+             tls::pass,
+             tls::pass,
+             tls::vector<1>,
+             tls::vector<1>,
+             tls::pass,
+             tls::pass)
+};
+
 // struct {
 //   opaque group_id<0..255>;
 //   uint64 epoch;
@@ -147,6 +180,7 @@ struct ProposalType
     add = 1,
     update = 2,
     remove = 3,
+    external_init = 4,
   };
 
   template<typename T>
@@ -171,6 +205,13 @@ struct Remove
   TLS_SERIALIZABLE(removed)
 };
 
+struct ExternalInit
+{
+  bytes kem_output;
+  TLS_SERIALIZABLE(kem_output)
+  TLS_TRAITS(tls::vector<1>)
+};
+
 // enum {
 //     invalid(0),
 //     handshake(1),
@@ -193,7 +234,7 @@ struct ContentType
 
 struct Proposal
 {
-  std::variant<Add, Update, Remove> content;
+  std::variant<Add, Update, Remove, ExternalInit> content;
 
   ProposalType::selector proposal_type() const;
 
@@ -283,6 +324,7 @@ enum struct SenderType : uint8_t
   member = 1,
   preconfigured = 2,
   new_member = 3,
+  external_joiner = 4,
 };
 
 struct Sender
