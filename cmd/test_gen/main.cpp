@@ -346,7 +346,7 @@ generate_messages()
 
     // Construct Commit
     auto commit = Commit{
-      { { tv.random }, { tv.random } },
+      { { ProposalRef{ tv.random } }, { ProposalRef{ tv.random } } },
       update_path,
     };
 

@@ -82,12 +82,9 @@ TEST_CASE_FIXTURE(StateTest, "Two Person")
   auto first0 =
     State{ group_id, suite, init_privs[0], identity_privs[0], key_packages[0] };
 
-  // Create an Add proposal for the new participant
-  auto add = first0.add(key_packages[1]);
-
   // Handle the Add proposal and create a Commit
-  first0.handle(add);
-  auto [commit, welcome, first1] = first0.commit(fresh_secret());
+  auto add = first0.add_proposal(key_packages[1]);
+  auto [commit, welcome, first1] = first0.commit(fresh_secret(), { add });
   silence_unused(commit);
 
   // Initialize the second participant from the Welcome
@@ -106,13 +103,13 @@ TEST_CASE_FIXTURE(StateTest, "Add Multiple Members")
     group_id, suite, init_privs[0], identity_privs[0], key_packages[0]);
 
   // Create and process an Add proposal for each new participant
+  auto adds = std::vector<Proposal>{};
   for (size_t i = 1; i < group_size; i += 1) {
-    auto add = states[0].add(key_packages[i]);
-    states[0].handle(add);
+    adds.push_back(states[0].add_proposal(key_packages[i]));
   }
 
   // Create a Commit that adds everybody
-  auto [commit, welcome, new_state] = states[0].commit(fresh_secret());
+  auto [commit, welcome, new_state] = states[0].commit(fresh_secret(), adds);
   silence_unused(commit);
   states[0] = new_state;
 
@@ -135,15 +132,13 @@ TEST_CASE_FIXTURE(StateTest, "Full Size Group")
   for (size_t i = 1; i < group_size; i += 1) {
     auto sender = i - 1;
 
-    auto add = states[sender].add(key_packages[i]);
-    states[sender].handle(add);
-
-    auto [commit, welcome, new_state] = states[sender].commit(fresh_secret());
+    auto add = states[sender].add_proposal(key_packages[i]);
+    auto [commit, welcome, new_state] =
+      states[sender].commit(fresh_secret(), { add });
     for (size_t j = 0; j < states.size(); j += 1) {
       if (j == sender) {
         states[j] = new_state;
       } else {
-        states[j].handle(add);
         states[j] = states[j].handle(commit).value();
       }
     }
@@ -170,12 +165,13 @@ protected:
     states.emplace_back(
       group_id, suite, init_privs[0], identity_privs[0], key_packages[0]);
 
+    auto adds = std::vector<Proposal>{};
     for (size_t i = 1; i < group_size; i += 1) {
-      auto add = states[0].add(key_packages[i]);
-      states[0].handle(add);
+      adds.push_back(states[0].add_proposal(key_packages[i]));
     }
 
-    auto [commit, welcome, new_state] = states[0].commit(fresh_secret());
+    auto [commit, welcome, new_state] =
+      states[0].commit(fresh_secret(), { adds });
     silence_unused(commit);
     states[0] = new_state;
     for (size_t i = 1; i < group_size; i += 1) {
@@ -196,20 +192,37 @@ protected:
   }
 };
 
-TEST_CASE_FIXTURE(RunningGroupTest, "Update Everyone in a Group")
+TEST_CASE_FIXTURE(RunningGroupTest, "Update Everyone via Empty Commit")
 {
   for (size_t i = 0; i < group_size; i += 1) {
     auto new_leaf = fresh_secret();
-    auto update = states[i].update(new_leaf);
-    states[i].handle(update);
-    auto [commit, welcome, new_state] = states[i].commit(new_leaf);
+    auto [commit, welcome, new_state] = states[i].commit(new_leaf, {});
     silence_unused(welcome);
 
     for (auto& state : states) {
       if (state.index().val == i) {
         state = new_state;
       } else {
-        state.handle(update);
+        state = state.handle(commit).value();
+      }
+    }
+
+    check_consistency();
+  }
+}
+
+TEST_CASE_FIXTURE(RunningGroupTest, "Update Everyone in a Group")
+{
+  for (size_t i = 0; i < group_size; i += 1) {
+    auto new_leaf = fresh_secret();
+    auto update = states[i].update_proposal(new_leaf);
+    auto [commit, welcome, new_state] = states[i].commit(new_leaf, { update });
+    silence_unused(welcome);
+
+    for (auto& state : states) {
+      if (state.index().val == i) {
+        state = new_state;
+      } else {
         state = state.handle(commit).value();
       }
     }
@@ -221,9 +234,9 @@ TEST_CASE_FIXTURE(RunningGroupTest, "Update Everyone in a Group")
 TEST_CASE_FIXTURE(RunningGroupTest, "Remove Members from a Group")
 {
   for (int i = static_cast<int>(group_size) - 2; i > 0; i -= 1) {
-    auto remove = states[i].remove(LeafIndex{ uint32_t(i + 1) });
-    states[i].handle(remove);
-    auto [commit, welcome, new_state] = states[i].commit(fresh_secret());
+    auto remove = states[i].remove_proposal(LeafIndex{ uint32_t(i + 1) });
+    auto [commit, welcome, new_state] =
+      states[i].commit(fresh_secret(), { remove });
     silence_unused(welcome);
 
     states.pop_back();
@@ -231,7 +244,6 @@ TEST_CASE_FIXTURE(RunningGroupTest, "Remove Members from a Group")
       if (state.index().val == size_t(i)) {
         state = new_state;
       } else {
-        state.handle(remove);
         state = state.handle(commit).value();
       }
     }
@@ -243,10 +255,9 @@ TEST_CASE_FIXTURE(RunningGroupTest, "Remove Members from a Group")
 TEST_CASE_FIXTURE(RunningGroupTest, "Roster Updates")
 {
   // remove member at position 1
-  auto remove_1 = states[0].remove(RosterIndex{ 1 });
-  states[0].handle(remove_1);
-  // commit to new state
-  auto [commit_1, welcome_1, new_state_1] = states[0].commit(fresh_secret());
+  auto remove_1 = states[0].remove_proposal(RosterIndex{ 1 });
+  auto [commit_1, welcome_1, new_state_1] =
+    states[0].commit(fresh_secret(), { remove_1 });
   silence_unused(welcome_1);
   // roster should be 0, 2, 3, 4
   auto expected_roster = std::vector<Credential>{
@@ -259,10 +270,9 @@ TEST_CASE_FIXTURE(RunningGroupTest, "Roster Updates")
   REQUIRE(expected_roster == new_state_1.roster());
 
   // remove member at position 2
-  auto remove_2 = new_state_1.remove(RosterIndex{ 2 });
-  new_state_1.handle(remove_2);
-  // commit to new state
-  auto [commit_2, welcome_2, new_state_2] = new_state_1.commit(fresh_secret());
+  auto remove_2 = new_state_1.remove_proposal(RosterIndex{ 2 });
+  auto [commit_2, welcome_2, new_state_2] =
+    new_state_1.commit(fresh_secret(), { remove_2 });
   silence_unused(welcome_2);
   // roster should be 0, 2, 4
   expected_roster = std::vector<Credential>{
@@ -279,9 +289,7 @@ TEST_CASE_FIXTURE(RunningGroupTest, "Roster Updates")
       // skip since we removed
       continue;
     }
-    states[i].handle(remove_1);
     states[i] = states[i].handle(commit_1).value();
-    states[i].handle(remove_2);
     states[i] = states[i].handle(commit_2).value();
     REQUIRE(expected_roster == states[i].roster());
   }

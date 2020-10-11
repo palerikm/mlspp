@@ -139,7 +139,7 @@ TEST_CASE("Messages Interop")
 
     // Commit
     auto commit = Commit{
-      { { tv.random }, { tv.random } },
+      { { ProposalRef{ tv.random } }, { ProposalRef{ tv.random } } },
       update_path,
     };
     tls_round_trip(tc.commit, commit, true);
