@@ -296,21 +296,13 @@ struct Commit
 //     }
 //
 //     opaque signature<0..2^16-1>;
+//     optional<MAC> confirmation_tag;
 // } MLSPlaintext;
 struct ApplicationData
 {
   bytes data;
   TLS_SERIALIZABLE(data)
   TLS_TRAITS(tls::vector<4>)
-};
-
-struct CommitData
-{
-  Commit commit;
-  bytes confirmation;
-
-  TLS_SERIALIZABLE(commit, confirmation)
-  TLS_TRAITS(tls::pass, tls::vector<1>)
 };
 
 struct GroupContext;
@@ -332,14 +324,23 @@ struct Sender
   TLS_SERIALIZABLE(sender_type, sender);
 };
 
+struct MAC
+{
+  bytes mac_value;
+
+  TLS_SERIALIZABLE(mac_value)
+  TLS_TRAITS(tls::vector<1>)
+};
+
 struct MLSPlaintext
 {
   bytes group_id;
   epoch_t epoch;
   Sender sender;
   bytes authenticated_data;
-  std::variant<ApplicationData, Proposal, CommitData> content;
+  std::variant<ApplicationData, Proposal, Commit> content;
   bytes signature;
+  std::optional<MAC> confirmation_tag;
 
   // Constructor for unmarshaling directly
   MLSPlaintext() = default;
@@ -381,13 +382,15 @@ struct MLSPlaintext
                    sender,
                    authenticated_data,
                    content,
-                   signature)
+                   signature,
+                   confirmation_tag)
   TLS_TRAITS(tls::vector<1>,
              tls::pass,
              tls::pass,
              tls::vector<4>,
              tls::variant<ContentType>,
-             tls::vector<2>)
+             tls::vector<2>,
+             tls::pass)
 };
 
 // struct {
