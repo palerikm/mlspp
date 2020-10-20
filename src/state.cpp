@@ -1,5 +1,7 @@
 #include <mls/state.h>
 
+#include <iostream>
+
 namespace mls {
 
 ///
@@ -88,7 +90,6 @@ State::State(const HPKEPrivateKey& init_priv,
   _group_id = group_info.group_id;
   _tree = group_info.tree;
   _confirmed_transcript_hash = group_info.confirmed_transcript_hash;
-  _interim_transcript_hash = group_info.interim_transcript_hash;
 
   // Construct TreeKEM private key from partrs provided
   auto maybe_index = _tree.find(kp);
@@ -112,10 +113,14 @@ State::State(const HPKEPrivateKey& init_priv,
   _keys = KeyScheduleEpoch(
     _suite, LeafCount(_tree.size()), secrets.epoch_secret, group_ctx);
 
-  // Verify the confirmation
+  // Verify the confirmation and compute the interim transcript hash
   if (!verify_confirmation(group_info.confirmation)) {
     throw ProtocolError("Confirmation failed to verify");
   }
+
+  auto confirmation = tls::marshal(MAC{ group_info.confirmation });
+  auto interim_transcript = _confirmed_transcript_hash + confirmation;
+  _interim_transcript_hash = _suite.get().digest.hash(interim_transcript);
 }
 
 // Join a group from outside
@@ -328,7 +333,6 @@ State::commit(const bytes& leaf_secret,
     next._epoch,
     next._tree,
     next._confirmed_transcript_hash,
-    next._interim_transcript_hash,
     next._extensions,
     pt.confirmation_tag.value().mac_value,
   };
@@ -476,10 +480,11 @@ State::handle(const MLSPlaintext& pt)
   }
 
   // Update the transcripts and advance the key schedule
-  next._confirmed_transcript_hash = _suite.get().digest.hash(
-    next._interim_transcript_hash + pt.commit_content());
-  next._interim_transcript_hash = _suite.get().digest.hash(
-    next._confirmed_transcript_hash + pt.commit_auth_data());
+  auto confirmed_transcript = next._interim_transcript_hash + pt.commit_content();
+  next._confirmed_transcript_hash = _suite.get().digest.hash(confirmed_transcript);
+
+  auto interim_transcript = next._confirmed_transcript_hash + pt.commit_auth_data();
+  next._interim_transcript_hash = _suite.get().digest.hash(interim_transcript);
 
   next._epoch += 1;
   next.update_epoch_secrets(update_secret, force_init_secret);

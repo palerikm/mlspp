@@ -17,7 +17,6 @@ GroupInfo::GroupInfo(bytes group_id_in,
                      epoch_t epoch_in,
                      TreeKEMPublicKey tree_in,
                      bytes confirmed_transcript_hash_in,
-                     bytes interim_transcript_hash_in,
                      ExtensionList extensions_in,
                      bytes confirmation_in)
   : suite(tree_in.suite)
@@ -25,7 +24,6 @@ GroupInfo::GroupInfo(bytes group_id_in,
   , epoch(epoch_in)
   , tree(std::move(tree_in))
   , confirmed_transcript_hash(std::move(confirmed_transcript_hash_in))
-  , interim_transcript_hash(std::move(interim_transcript_hash_in))
   , extensions(std::move(extensions_in))
   , confirmation(std::move(confirmation_in))
 {}
@@ -37,7 +35,7 @@ GroupInfo::to_be_signed() const
   tls::vector<1>::encode(w, group_id);
   w << epoch << tree;
   tls::vector<1>::encode(w, confirmed_transcript_hash);
-  tls::vector<1>::encode(w, interim_transcript_hash);
+  w << extensions;
   tls::vector<1>::encode(w, confirmation);
   w << signer_index;
   return w.bytes();
@@ -313,7 +311,11 @@ MLSPlaintext::commit_content() const
 bytes
 MLSPlaintext::commit_auth_data() const
 {
-  return tls::marshal(confirmation_tag);
+  if (!confirmation_tag.has_value()) {
+    throw InvalidParameterError("Missing confirmation tag");
+  }
+
+  return tls::marshal(confirmation_tag.value());
 }
 
 bytes

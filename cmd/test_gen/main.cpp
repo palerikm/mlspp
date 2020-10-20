@@ -329,7 +329,7 @@ generate_messages()
                   } };
 
     // Construct Welcome
-    auto group_info = GroupInfo{ tv.group_id, tv.epoch, tree,     tv.random,
+    auto group_info = GroupInfo{ tv.group_id, tv.epoch, tree,
                                  tv.random,   ext_list, tv.random };
     group_info.signer_index = LeafIndex(tv.sender.sender);
     group_info.signature = tv.random;

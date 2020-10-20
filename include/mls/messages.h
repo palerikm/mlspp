@@ -63,7 +63,6 @@ public:
   TreeKEMPublicKey tree;
 
   bytes confirmed_transcript_hash;
-  bytes interim_transcript_hash;
   ExtensionList extensions;
 
   bytes confirmation;
@@ -75,7 +74,6 @@ public:
             epoch_t epoch_in,
             TreeKEMPublicKey tree_in,
             bytes confirmed_transcript_hash_in,
-            bytes interim_transcript_hash_in,
             ExtensionList extensions_in,
             bytes confirmation_in);
 
@@ -87,7 +85,6 @@ public:
                    epoch,
                    tree,
                    confirmed_transcript_hash,
-                   interim_transcript_hash,
                    extensions,
                    confirmation,
                    signer_index,
@@ -95,7 +92,6 @@ public:
   TLS_TRAITS(tls::vector<1>,
              tls::pass,
              tls::pass,
-             tls::vector<1>,
              tls::vector<1>,
              tls::pass,
              tls::vector<1>,
