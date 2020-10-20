@@ -33,7 +33,6 @@ State::State(SignaturePrivateKey sig_priv, const GroupKeyPackage& gkp)
   , _group_id(gkp.group_id)
   , _epoch(gkp.epoch)
   , _tree(gkp.tree)
-  , _confirmed_transcript_hash(gkp.confirmed_transcript_hash)
   , _interim_transcript_hash(gkp.interim_transcript_hash)
   , _extensions(gkp.extensions)
   , _keys(gkp.cipher_suite)
@@ -41,6 +40,7 @@ State::State(SignaturePrivateKey sig_priv, const GroupKeyPackage& gkp)
   , _identity_priv(std::move(sig_priv))
 {
   // The following are not set:
+  //    _confirmed_transcript_hash
   //    _index
   //    _tree_priv
   //
@@ -350,7 +350,6 @@ State::group_key_package() const
     _group_id,
     _epoch,
     _tree,
-    _confirmed_transcript_hash,
     _interim_transcript_hash,
     _keys.external_init_priv.public_key,
     _extensions,

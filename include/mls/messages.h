@@ -21,7 +21,6 @@ struct GroupKeyPackage
   bytes group_id;
   epoch_t epoch;
   TreeKEMPublicKey tree;
-  bytes confirmed_transcript_hash;
   bytes interim_transcript_hash;
   HPKEPublicKey external_init_key;
   ExtensionList extensions;
@@ -30,7 +29,6 @@ struct GroupKeyPackage
                    group_id,
                    epoch,
                    tree,
-                   confirmed_transcript_hash,
                    interim_transcript_hash,
                    external_init_key,
                    extensions)
@@ -38,7 +36,6 @@ struct GroupKeyPackage
              tls::vector<1>,
              tls::pass,
              tls::pass,
-             tls::vector<1>,
              tls::vector<1>,
              tls::pass,
              tls::pass)

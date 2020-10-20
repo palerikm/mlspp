@@ -317,7 +317,7 @@ generate_messages()
     // Construct GroupKeyPackage
     auto group_key_package = GroupKeyPackage{
       suite,     tv.group_id, tv.epoch, tree,
-      tv.random, tv.random,   dh_key,   ext_list,
+      tv.random,   dh_key,   ext_list,
     };
 
     // Construct UpdatePath
